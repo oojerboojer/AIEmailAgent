@@ -1,0 +1,301 @@
+{
+  "name": "Gmail handler",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "labelIds": [
+            "INBOX"
+          ],
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        256,
+        0
+      ],
+      "id": "b6550f88-7806-4be1-854d-b82cadf20751",
+      "name": "Gmail Trigger",
+      "alwaysOutputData": false,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-3.1-flash-lite",
+          "mode": "list",
+          "cachedResultName": "models/gemini-3.1-flash-lite"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an executive assistant triage bot. Analyze incoming emails.\nReturn valid JSON with:\n1. summary: A 2-sentence summary of the message. The message is from{{ $json.text }}\n2. urgency: \"High\", \"Medium\", or \"Low\".\n3. core_request: The specific ask or deadline.\n4. draft_reply: A professional, concise contextual response addressing all asks."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        0
+      ],
+      "id": "e79db7c8-a18e-4f3d-a975-ac90e0925f7f",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "YOUR_GEMINI_CREDENTIAL_ID",
+          "name": "FREE Gemini API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of $input.all()) {\n  // 1. Target the exact path where the LLM placed the text\n  let rawText = item.json.content.parts[0].text;\n  \n  // 2. Strip out the markdown formatting (```json and ```)\n  let cleanText = rawText.replace(/```json/gi, '').replace(/```/gi, '').trim();\n  \n  // 3. Convert the clean string into a real JSON object\n  let parsedData = JSON.parse(cleanText);\n  \n  // 4. Attach the separated fields directly to the main output\n  Object.assign(item.json, parsedData);\n}\n\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        0
+      ],
+      "id": "0ab20cb0-52f2-4c50-a447-d88c29533c66",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c40fb219-1c94-4f83-a646-eeb8d12b5335",
+              "leftValue": "={{ ($json.urgency || '').toLowerCase() }}",
+              "rightValue": "low",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1056,
+        0
+      ],
+      "id": "483b9f41-95b7-4b4e-9c80-8852a0845cb0",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "subject": "=re: {{ $('Gmail Trigger').item.json.headers.subject }}",
+        "message": "={{ $('Code in JavaScript').item.json.draft_reply }}",
+        "options": {
+          "threadId": "={{ $('Gmail Trigger').item.json.threadId }}",
+          "sendTo": "={{ $('Gmail Trigger').item.json.headers.from }}"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        16
+      ],
+      "id": "ceb9143b-68ae-4c50-8e84-43a5452c3836",
+      "name": "Create a draft",
+      "webhookId": "YOUR_WEBHOOK_ID_1",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $('Gmail Trigger').item.json.id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1280,
+        -144
+      ],
+      "id": "43af6dd5-88d2-40d8-bf9e-1b923b11a153",
+      "name": "Mark a message as read",
+      "webhookId": "YOUR_WEBHOOK_ID_2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Another Message marked as read.\n\n\nSUBJECT:{{ $('Gmail Trigger').item.json.headers.subject }}\nFrom:{{$('Gmail Trigger').item.json.headers.from }}\nMessage Id: {{ $json.id }}\nThread Id: {{$json.threadId }}",
+        "options": {},
+        "embeds": {
+          "values": []
+        }
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        -144
+      ],
+      "id": "c30fda8c-f46a-4142-bea6-54ebdc0b0953",
+      "name": "NotifyReadMessage",
+      "webhookId": "YOUR_WEBHOOK_ID_3",
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "YOUR_DISCORD_CREDENTIAL_ID",
+          "name": "Projectsss server webhook"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Email Response Drafted\n\nSubject: {{ $json.id }}\n\nMessage: {{$json.message }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        16
+      ],
+      "id": "4120eea5-dd1b-487a-8b85-72f58370f9bf",
+      "name": "NotifyDraft",
+      "webhookId": "YOUR_WEBHOOK_ID_4",
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "YOUR_DISCORD_CREDENTIAL_ID",
+          "name": "Projectsss server webhook"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create a draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark a message as read": {
+      "main": [
+        [
+          {
+            "node": "NotifyReadMessage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a draft": {
+      "main": [
+        [
+          {
+            "node": "NotifyDraft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0e119367-0afb-4e67-b423-b9afdac249b0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  },
+  "nodeGroups": [],
+  "id": "waw71XifTGFN81uE",
+  "tags": []
+}
